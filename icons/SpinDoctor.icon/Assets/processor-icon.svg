@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <!-- Pins - Top (centered: x=25,38,51,64 within body x=17..79) -->
+  <rect x="25" y="6" width="7" height="14" rx="2" fill="#F5C518"/>
+  <rect x="38" y="6" width="7" height="14" rx="2" fill="#F5C518"/>
+  <rect x="51" y="6" width="7" height="14" rx="2" fill="#F5C518"/>
+  <rect x="64" y="6" width="7" height="14" rx="2" fill="#F5C518"/>
+
+  <!-- Pins - Bottom -->
+  <rect x="25" y="76" width="7" height="14" rx="2" fill="#F5C518"/>
+  <rect x="38" y="76" width="7" height="14" rx="2" fill="#F5C518"/>
+  <rect x="51" y="76" width="7" height="14" rx="2" fill="#F5C518"/>
+  <rect x="64" y="76" width="7" height="14" rx="2" fill="#F5C518"/>
+
+  <!-- Pins - Left (centered: y=25,38,51,64 within body y=17..79) -->
+  <rect x="6" y="25" width="14" height="7" rx="2" fill="#F5C518"/>
+  <rect x="6" y="38" width="14" height="7" rx="2" fill="#F5C518"/>
+  <rect x="6" y="51" width="14" height="7" rx="2" fill="#F5C518"/>
+  <rect x="6" y="64" width="14" height="7" rx="2" fill="#F5C518"/>
+
+  <!-- Pins - Right -->
+  <rect x="76" y="25" width="14" height="7" rx="2" fill="#F5C518"/>
+  <rect x="76" y="38" width="14" height="7" rx="2" fill="#F5C518"/>
+  <rect x="76" y="51" width="14" height="7" rx="2" fill="#F5C518"/>
+  <rect x="76" y="64" width="14" height="7" rx="2" fill="#F5C518"/>
+
+  <!-- Chip body -->
+  <rect x="17" y="17" width="62" height="62" rx="6" fill="#9E9E9E"/>
+
+  <!-- Inner highlight square -->
+  <rect x="28" y="28" width="40" height="40" rx="4" fill="#E0E0E0"/>
+</svg>
