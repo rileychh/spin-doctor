@@ -44,17 +44,30 @@ jobs:
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
       - name: Codesign app bundle
+        env:
+          IDENTITY: "Developer ID Application: HeSheng Xue (G582M7KCHL)"
         run: |
-          find "dist/Spin Doctor.app" -type f -perm +111 -o -name "*.dylib" -o -name "*.so" | while read f; do
-            codesign --force --options runtime \
-              --entitlements entitlements.plist \
-              --sign "Developer ID Application: HeSheng Xue (G582M7KCHL)" \
-              --timestamp "$f"
-          done
-          codesign --force --options runtime \
+          APP="dist/Spin Doctor.app"
+          # Sign Python.framework
+          codesign --sign "$IDENTITY" --force --timestamp --options=runtime \
+            "$APP/Contents/Frameworks/Python.framework/Versions/3.12/Python"
+          # Sign all .so files
+          find "$APP" -name "*.so" -exec codesign --sign "$IDENTITY" --force --timestamp --options=runtime {} \;
+          # Sign all .dylib files
+          find "$APP" -name "*.dylib" -exec codesign --sign "$IDENTITY" --force --timestamp --options=runtime {} \;
+          # Sign the python interpreter
+          codesign --sign "$IDENTITY" --force --timestamp --options=runtime \
+            "$APP/Contents/MacOS/python"
+          # Sign the main executable (with entitlements)
+          codesign --sign "$IDENTITY" --force --timestamp --options=runtime \
             --entitlements entitlements.plist \
-            --sign "Developer ID Application: HeSheng Xue (G582M7KCHL)" \
-            --timestamp "dist/Spin Doctor.app"
+            "$APP/Contents/MacOS/Spin Doctor"
+          # Sign the top-level app bundle
+          codesign --sign "$IDENTITY" --force --timestamp --options=runtime \
+            --entitlements entitlements.plist \
+            "$APP"
+          # Verify
+          codesign --verify --deep --strict "$APP"
 
       - name: Notarize app bundle
         env:
