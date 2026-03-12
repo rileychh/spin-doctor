@@ -6,6 +6,12 @@ dist/
 wheels/
 *.egg-info
 
+# py2app / distribution artifacts
+*.dmg
+
 # Virtual environments
 .venv
+
+# Secrets and local config
 /.claude/settings.local.json
+/.env
