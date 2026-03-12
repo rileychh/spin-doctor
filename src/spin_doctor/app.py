@@ -139,6 +139,7 @@ class SpinDoctorApp(rumps.App):
         super().__init__("Spin Doctor", icon=icon_path, template=True, quit_button=None)  # type: ignore[arg-type]
         self._icon_nsimage.setSize_((18, 18))  # type: ignore[union-attr]
         self.config = load_config()
+        self._config_mtime = self._get_config_mtime()
         self.tracked: dict[int, TrackedProcess] = {}
         self.cooldowns: dict[str, float] = {}
         self.my_pid = os.getpid()
@@ -189,11 +190,22 @@ class SpinDoctorApp(rumps.App):
         set_login_item(new_state)
         sender.state = login_item_enabled()
 
-    def reload_config(self, _):
+    @staticmethod
+    def _get_config_mtime() -> float:
+        try:
+            return CONFIG_PATH.stat().st_mtime
+        except FileNotFoundError:
+            return 0.0
+
+    def _apply_config(self):
         self.config = load_config()
+        self._config_mtime = self._get_config_mtime()
         self.timer.stop()
         self.timer = rumps.Timer(self.poll, self.config["check_interval"])
         self.timer.start()
+
+    def reload_config(self, _):
+        self._apply_config()
         rumps.notification("Spin Doctor", "", "Config reloaded.")
 
     def open_config(self, _):
@@ -203,6 +215,10 @@ class SpinDoctorApp(rumps.App):
         subprocess.run(["open", str(CONFIG_PATH)])
 
     def poll(self, _):
+        mtime = self._get_config_mtime()
+        if mtime != self._config_mtime:
+            self._apply_config()
+
         now = time.time()
         threshold = self.config["cpu_threshold"]
         ignored = set(self.config["ignored_processes"])
