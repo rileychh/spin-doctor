@@ -1,0 +1,134 @@
+name: Build, Sign & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Build app bundle
+        run: uv run python setup.py py2app
+
+      - name: Import signing certificate
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$DEVELOPER_ID_P12" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 \
+            -P "$DEVELOPER_ID_P12_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Codesign app bundle
+        run: |
+          find "dist/Spin Doctor.app" -type f -perm +111 -o -name "*.dylib" -o -name "*.so" | while read f; do
+            codesign --force --options runtime \
+              --entitlements entitlements.plist \
+              --sign "Developer ID Application: HeSheng Xue (G582M7KCHL)" \
+              --timestamp "$f"
+          done
+          codesign --force --options runtime \
+            --entitlements entitlements.plist \
+            --sign "Developer ID Application: HeSheng Xue (G582M7KCHL)" \
+            --timestamp "dist/Spin Doctor.app"
+
+      - name: Notarize app bundle
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
+        run: |
+          ditto -c -k --keepParent "dist/Spin Doctor.app" $RUNNER_TEMP/SpinDoctor.zip
+          xcrun notarytool submit $RUNNER_TEMP/SpinDoctor.zip \
+            --apple-id "$APPLE_ID" \
+            --team-id "$TEAM_ID" \
+            --password "$APP_SPECIFIC_PASSWORD" \
+            --wait
+          xcrun stapler staple "dist/Spin Doctor.app"
+
+      - name: Create DMG
+        run: |
+          STAGING=$RUNNER_TEMP/dmg-staging
+          mkdir -p "$STAGING"
+          cp -a "dist/Spin Doctor.app" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "Spin Doctor" -srcfolder "$STAGING" -ov -format UDZO SpinDoctor.dmg
+          codesign --force \
+            --sign "Developer ID Application: HeSheng Xue (G582M7KCHL)" \
+            --timestamp \
+            SpinDoctor.dmg
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" SpinDoctor.dmg \
+            --title "Spin Doctor ${{ steps.version.outputs.version }}" \
+            --generate-notes
+
+      - name: Update Homebrew Cask
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          SHA256=$(shasum -a 256 SpinDoctor.dmg | awk '{print $1}')
+          VERSION=${{ steps.version.outputs.version }}
+
+          cat > /tmp/spindoctor.rb << CASK
+          cask "spindoctor" do
+            version "$VERSION"
+            sha256 "$SHA256"
+
+            url "https://github.com/rileychh/spin-doctor/releases/download/v#{version}/SpinDoctor.dmg"
+            name "Spin Doctor"
+            desc "Menu bar app that detects busy-loop processes and offers to kill them"
+            homepage "https://github.com/rileychh/spin-doctor"
+
+            app "Spin Doctor.app"
+
+            uninstall quit: "com.spindoctor.app"
+
+            zap trash: [
+              "~/.config/spin_doctor",
+            ]
+
+            livecheck do
+              url :url
+              strategy :github_latest
+            end
+          end
+          CASK
+
+          cd $RUNNER_TEMP
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/rileychh/homebrew-tap.git"
+          cd homebrew-tap
+          mkdir -p Casks
+          cp /tmp/spindoctor.rb Casks/spindoctor.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/spindoctor.rb
+          git commit -m "Update spindoctor to $VERSION"
+          git push
