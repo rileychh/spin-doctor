@@ -1,3 +1,5 @@
+import tomllib
+from pathlib import Path
 from setuptools import setup
 
 # py2app rejects install_requires (auto-populated from pyproject.toml dependencies).
@@ -8,6 +10,9 @@ def _patched_finalize(self):
     self.distribution.install_requires = None
     _orig_finalize(self)
 py2app.build_app.py2app.finalize_options = _patched_finalize
+
+with open(Path(__file__).parent / "pyproject.toml", "rb") as f:
+    VERSION = tomllib.load(f)["project"]["version"]
 
 APP = ["launch.py"]
 DATA_FILES = [
@@ -22,7 +27,8 @@ OPTIONS = {
     "plist": {
         "CFBundleName": "Spin Doctor",
         "CFBundleIdentifier": "com.spindoctor.app",
-        "CFBundleShortVersionString": "0.1.0",
+        "CFBundleShortVersionString": VERSION,
+        "NSHumanReadableCopyright": "Copyright © 2026 Riley Ho.",
         "LSUIElement": True,
     },
     "packages": ["spin_doctor", "rumps", "psutil"],
