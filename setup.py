@@ -12,20 +12,20 @@ py2app.build_app.py2app.finalize_options = _patched_finalize
 APP = ["launch.py"]
 DATA_FILES = [
     ("", [
-        "src/spindoctor/resources/menu-bar-extras.png",
-        "src/spindoctor/resources/menu-bar-extras@2x.png",
+        "src/spin_doctor/resources/menu-bar-extras.png",
+        "src/spin_doctor/resources/menu-bar-extras@2x.png",
     ]),
 ]
 OPTIONS = {
     "argv_emulation": False,
-    "iconfile": "src/spindoctor/resources/SpinDoctor.icns",
+    "iconfile": "src/spin_doctor/resources/SpinDoctor.icns",
     "plist": {
-        "CFBundleName": "SpinDoctor",
+        "CFBundleName": "Spin Doctor",
         "CFBundleIdentifier": "com.spindoctor.app",
         "CFBundleShortVersionString": "0.1.0",
         "LSUIElement": True,
     },
-    "packages": ["spindoctor", "rumps", "psutil"],
+    "packages": ["spin_doctor", "rumps", "psutil"],
 }
 
 setup(

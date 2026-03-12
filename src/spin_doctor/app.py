@@ -9,7 +9,7 @@ import psutil
 import rumps
 
 RESOURCES_DIR = Path(__file__).parent / "resources"
-CONFIG_DIR = Path.home() / ".config" / "spindoctor"
+CONFIG_DIR = Path.home() / ".config" / "spin_doctor"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 
 DEFAULT_CONFIG = {
@@ -83,7 +83,7 @@ class TrackedProcess:
 class SpinDoctorApp(rumps.App):
     def __init__(self):
         icon_path = str(RESOURCES_DIR / "menu-bar-extras@2x.png")
-        super().__init__("SpinDoctor", icon=icon_path, template=True, quit_button=None)
+        super().__init__("Spin Doctor", icon=icon_path, template=True, quit_button=None)
         self._icon_nsimage.setSize_((18, 18))
         self.config = load_config()
         self.tracked: dict[int, TrackedProcess] = {}
@@ -121,7 +121,7 @@ class SpinDoctorApp(rumps.App):
         self.timer.stop()
         self.timer = rumps.Timer(self.poll, self.config["check_interval"])
         self.timer.start()
-        rumps.notification("SpinDoctor", "", "Config reloaded.")
+        rumps.notification("Spin Doctor", "", "Config reloaded.")
 
     def open_config(self, _):
         if not CONFIG_PATH.exists():
@@ -208,7 +208,7 @@ class SpinDoctorApp(rumps.App):
     def send_notification(self, tp: TrackedProcess):
         duration = int(time.time() - tp.first_seen)
         print(
-            f"[spindoctor] Alert: {tp.name} (PID {tp.pid}) busy for {duration}s",
+            f"[Spin Doctor] Alert: {tp.name} (PID {tp.pid}) busy for {duration}s",
             flush=True,
         )
         rumps.notification(
@@ -224,7 +224,7 @@ class SpinDoctorApp(rumps.App):
             proc = psutil.Process(pid)
             if proc.name() != expected_name:
                 rumps.notification(
-                    "SpinDoctor",
+                    "Spin Doctor",
                     "Kill aborted",
                     f"PID {pid} is now '{proc.name()}', not '{expected_name}' (recycled PID).",
                 )
@@ -234,16 +234,16 @@ class SpinDoctorApp(rumps.App):
                 proc.wait(timeout=3)
             except psutil.TimeoutExpired:
                 proc.kill()
-            rumps.notification("SpinDoctor", "", f"Killed {expected_name} (PID {pid}).")
+            rumps.notification("Spin Doctor", "", f"Killed {expected_name} (PID {pid}).")
             self.tracked.pop(pid, None)
         except psutil.NoSuchProcess:
             rumps.notification(
-                "SpinDoctor", "", f"{expected_name} (PID {pid}) already exited."
+                "Spin Doctor", "", f"{expected_name} (PID {pid}) already exited."
             )
             self.tracked.pop(pid, None)
         except psutil.AccessDenied:
             rumps.notification(
-                "SpinDoctor",
+                "Spin Doctor",
                 "Kill failed",
                 f"Access denied for {expected_name} (PID {pid}).",
             )

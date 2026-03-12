@@ -1,4 +1,4 @@
 """Entry point for py2app."""
-from spindoctor.app import main
+from spin_doctor.app import main
 
 main()
