@@ -1,16 +1,21 @@
+import json
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 import tomllib
 
+import objc
 import psutil
 import rumps
 
+BUNDLE_ID = "com.spindoctor.app"
 RESOURCES_DIR = Path(__file__).parent / "resources"
 CONFIG_DIR = Path.home() / ".config" / "spin_doctor"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
+STATE_PATH = CONFIG_DIR / "state.json"
 
 DEFAULT_CONFIG = {
     "cpu_threshold": 95.0,
@@ -41,20 +46,7 @@ ignored_processes = [
 ]
 """
 
-
-def ensure_plist():
-    """Create Info.plist next to the Python binary so rumps notifications work."""
-    plist_path = Path(os.sys.executable).parent / "Info.plist"
-    if not plist_path.exists():
-        subprocess.run(
-            [
-                "/usr/libexec/PlistBuddy",
-                "-c",
-                'Add :CFBundleIdentifier string "com.spindoctor.app"',
-                str(plist_path),
-            ],
-            check=True,
-        )
+# --- Config & state ---
 
 
 def load_config() -> dict:
@@ -71,6 +63,67 @@ def load_config() -> dict:
     return config
 
 
+def load_state() -> dict:
+    if STATE_PATH.exists():
+        return json.loads(STATE_PATH.read_text())
+    return {}
+
+
+def save_state(state: dict):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    STATE_PATH.write_text(json.dumps(state))
+
+
+# --- Plist & bundle helpers ---
+
+
+def ensure_plist():
+    """Create Info.plist next to the Python binary so rumps notifications work."""
+    plist_path = Path(sys.executable).parent / "Info.plist"
+    if not plist_path.exists():
+        subprocess.run(
+            [
+                "/usr/libexec/PlistBuddy",
+                "-c",
+                'Add :CFBundleIdentifier string "com.spindoctor.app"',
+                str(plist_path),
+            ],
+            check=True,
+        )
+
+
+def is_app_bundle() -> bool:
+    exe = Path(sys.executable)
+    return any(p.suffix == ".app" for p in exe.parents)
+
+
+# --- Login item (ServiceManagement) ---
+
+_sm_bundle = {}
+objc.loadBundle(  # type: ignore[attr-defined]
+    "ServiceManagement",
+    _sm_bundle,
+    bundle_path="/System/Library/Frameworks/ServiceManagement.framework",
+)
+SMAppService = _sm_bundle["SMAppService"]
+
+
+def _login_service():
+    return SMAppService.alloc().initWithType_identifier_(0, BUNDLE_ID)
+
+
+def login_item_enabled() -> bool:
+    return _login_service().status() == 1  # SMAppServiceStatusEnabled
+
+
+def set_login_item(enabled: bool):
+    service = _login_service()
+    if enabled:
+        service.registerAndReturnError_(None)
+    else:
+        service.unregisterAndReturnError_(None)
+
+
 @dataclass
 class TrackedProcess:
     pid: int
@@ -83,19 +136,34 @@ class TrackedProcess:
 class SpinDoctorApp(rumps.App):
     def __init__(self):
         icon_path = str(RESOURCES_DIR / "menu-bar-extras@2x.png")
-        super().__init__("Spin Doctor", icon=icon_path, template=True, quit_button=None)
-        self._icon_nsimage.setSize_((18, 18))
+        super().__init__("Spin Doctor", icon=icon_path, template=True, quit_button=None)  # type: ignore[arg-type]
+        self._icon_nsimage.setSize_((18, 18))  # type: ignore[union-attr]
         self.config = load_config()
         self.tracked: dict[int, TrackedProcess] = {}
         self.cooldowns: dict[str, float] = {}
         self.my_pid = os.getpid()
         self.kill_menu_items: list[rumps.MenuItem] = []
 
+        self.in_bundle = is_app_bundle()
+        self.login_item = rumps.MenuItem("Launch on Login")
+        if self.in_bundle:
+            state = load_state()
+            if "launch_on_login_initialized" not in state:
+                set_login_item(True)
+                state["launch_on_login_initialized"] = True
+                save_state(state)
+            self.login_item.state = login_item_enabled()
+            self.login_item.set_callback(self.toggle_login)
+        else:
+            self.login_item.state = False
+            self.login_item.set_callback(None)
+
         self.status_item = rumps.MenuItem("No busy processes detected")
         self.status_item.set_callback(None)
         self.menu = [
             self.status_item,
             None,
+            self.login_item,
             rumps.MenuItem("Reload Config", callback=self.reload_config),
             rumps.MenuItem("Open Config File", callback=self.open_config),
             None,
@@ -116,6 +184,11 @@ class SpinDoctorApp(rumps.App):
             if pid is not None and name is not None:
                 self.kill_process(pid, name)
 
+    def toggle_login(self, sender):
+        new_state = not sender.state
+        set_login_item(new_state)
+        sender.state = login_item_enabled()
+
     def reload_config(self, _):
         self.config = load_config()
         self.timer.stop()
@@ -127,7 +200,7 @@ class SpinDoctorApp(rumps.App):
         if not CONFIG_PATH.exists():
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             CONFIG_PATH.write_text(DEFAULT_CONFIG_TOML)
-        os.system(f"open '{CONFIG_PATH}'")
+        subprocess.run(["open", str(CONFIG_PATH)])
 
     def poll(self, _):
         now = time.time()
@@ -234,7 +307,9 @@ class SpinDoctorApp(rumps.App):
                 proc.wait(timeout=3)
             except psutil.TimeoutExpired:
                 proc.kill()
-            rumps.notification("Spin Doctor", "", f"Killed {expected_name} (PID {pid}).")
+            rumps.notification(
+                "Spin Doctor", "", f"Killed {expected_name} (PID {pid})."
+            )
             self.tracked.pop(pid, None)
         except psutil.NoSuchProcess:
             rumps.notification(

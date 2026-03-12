@@ -29,6 +29,7 @@ The entire app is in `src/spin_doctor/app.py` — a single `SpinDoctorApp(rumps.
 - **Notifications**: After a process sustains high CPU for `duration_seconds`, a macOS notification with a "Kill" action button is sent (with a per-process-name cooldown)
 - **Kill flow**: `kill_process()` verifies the PID still matches the expected process name (guards against PID recycling), sends SIGTERM, waits 3s, then SIGKILL if needed
 - **Menu**: Dynamic menu items show currently busy processes with kill callbacks; updated each poll cycle by directly manipulating the NSMenu via `rumps` internals
+- **Launch on Login**: Uses `SMAppService` from the macOS ServiceManagement framework via `objc.loadBundle` into a local dict (to satisfy Ruff). Enabled by default on first launch; state is persisted in `~/.config/spin_doctor/state.json`. Only active when running as a `.app` bundle
 
 ## Build & Release
 
