@@ -116,3 +116,21 @@ jobs:
           gh release create "$GITHUB_REF_NAME" SpinDoctor.dmg \
             --title "Spin Doctor ${{ steps.version.outputs.version }}" \
             --generate-notes
+
+      - name: Update Homebrew cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          SHA256=$(shasum -a 256 SpinDoctor.dmg | awk '{print $1}')
+          TAP_REPO="rileychh/homebrew-tap"
+          CASK_PATH="Casks/spin-doctor.rb"
+          CASK=$(gh api "repos/$TAP_REPO/contents/$CASK_PATH" --jq '.content' | base64 --decode)
+          CASK=$(echo "$CASK" | sed "s/version \".*\"/version \"$VERSION\"/")
+          CASK=$(echo "$CASK" | sed "s/sha256 \".*\"/sha256 \"$SHA256\"/")
+          echo "$CASK" | gh api "repos/$TAP_REPO/contents/$CASK_PATH" \
+            --method PUT \
+            --field message="Update spin-doctor to $VERSION" \
+            --field branch=main \
+            --field sha="$(gh api "repos/$TAP_REPO/contents/$CASK_PATH" --jq '.sha')" \
+            --raw-field content="$(echo "$CASK" | base64)"
