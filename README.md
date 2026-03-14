@@ -20,7 +20,11 @@ Ever notice your Mac getting hot and loud for no apparent reason? Spin Doctor si
 
 ## Install
 
-Download the latest DMG from [Releases](https://github.com/rileychh/spin-doctor/releases).
+```bash
+brew install --cask rileychh/tap/spin-doctor
+```
+
+Or download the latest DMG from [Releases](https://github.com/rileychh/spin-doctor/releases).
 
 ## License
 
