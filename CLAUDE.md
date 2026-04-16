@@ -30,6 +30,7 @@ The entire app is in `src/spin_doctor/app.py` — a single `SpinDoctorApp(rumps.
 - **Kill flow**: `kill_process()` verifies the PID still matches the expected process name (guards against PID recycling), sends SIGTERM, waits 3s, then SIGKILL if needed
 - **Menu**: Dynamic menu items show currently busy processes with kill callbacks; updated each poll cycle by directly manipulating the NSMenu via `rumps` internals
 - **Launch on Login**: Uses `SMAppService` from the macOS ServiceManagement framework via `objc.loadBundle` into a local dict (to satisfy Ruff). Enabled by default on first launch; state is persisted in `~/.config/spin_doctor/state.json`. Only active when running as a `.app` bundle
+- **Logging**: Rotating file log at `~/Library/Logs/Spin Doctor/spin-doctor.log` (1 MB × 3 backups) via `setup_logging()`. Records startup, config load/reload, tracking start, alerts, and kill outcomes. The intent is to accumulate real-world data on which processes frequently spike so we can refine the default `ignored_processes` skip list later — treat the log as the source of truth for that tuning work
 
 ## Build & Release
 

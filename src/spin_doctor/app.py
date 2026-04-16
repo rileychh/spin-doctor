@@ -1,9 +1,11 @@
 import json
+import logging
 import os
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import tomllib
 
@@ -16,20 +18,49 @@ RESOURCES_DIR = Path(__file__).parent / "resources"
 CONFIG_DIR = Path.home() / ".config" / "spin_doctor"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 STATE_PATH = CONFIG_DIR / "state.json"
+LOG_DIR = Path.home() / "Library" / "Logs" / "Spin Doctor"
+LOG_PATH = LOG_DIR / "spin-doctor.log"
+
+log = logging.getLogger("spin_doctor")
+
+
+def setup_logging():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    handler = RotatingFileHandler(
+        LOG_PATH, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+    )
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    )
+    log.setLevel(logging.INFO)
+    log.addHandler(handler)
+    log.addHandler(logging.StreamHandler(sys.stdout))
 
 DEFAULT_CONFIG = {
     "cpu_threshold": 95.0,
     "duration_seconds": 60,
     "check_interval": 5,
     "cooldown_seconds": 300,
-    "ignored_processes": [
-        "kernel_task",
-        "WindowServer",
-        "coreaudiod",
-        "loginwindow",
-        "launchd",
-    ],
 }
+
+BUILTIN_IGNORED_PROCESSES = [
+    "kernel_task",
+    "WindowServer",
+    "coreaudiod",
+    "loginwindow",
+    "launchd",
+    "duetexpertd",
+    "contactsd",
+    "spotlightknowledged",
+    "routined",
+    "mediaanalysisd",
+    "fileproviderd",
+    "FPCKService",
+]
+
+BUILTIN_IGNORED_SUFFIXES = [
+    "(Renderer)",
+]
 
 DEFAULT_CONFIG_TOML = """\
 cpu_threshold = 95.0  # % on a single core
@@ -37,13 +68,13 @@ duration_seconds = 60  # sustained time before alerting
 check_interval = 5  # seconds between polls
 cooldown_seconds = 300  # don't re-notify same process name within this window
 
-ignored_processes = [
-  "kernel_task",
-  "WindowServer",
-  "coreaudiod",
-  "loginwindow",
-  "launchd",
-]
+# The app ships with a built-in skip list of system daemons and
+# Electron renderer processes.  Use the keys below to customise it
+# without replacing the defaults:
+#
+# extra_ignored_processes = ["some_process"]
+# extra_ignored_suffixes = ["(GPU)"]
+# unignore_processes = ["contactsd"]  # re-enable a built-in entry
 """
 
 # --- Config & state ---
@@ -53,13 +84,24 @@ def load_config() -> dict:
     if not CONFIG_PATH.exists():
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(DEFAULT_CONFIG_TOML)
-        return dict(DEFAULT_CONFIG)
 
-    with open(CONFIG_PATH, "rb") as f:
-        user_config = tomllib.load(f)
+    user_config = {}
+    if CONFIG_PATH.exists():
+        with open(CONFIG_PATH, "rb") as f:
+            user_config = tomllib.load(f)
 
     config = dict(DEFAULT_CONFIG)
-    config.update(user_config)
+    config.update({k: v for k, v in user_config.items() if k in DEFAULT_CONFIG})
+
+    unignore = set(user_config.get("unignore_processes", []))
+    config["ignored_processes"] = (
+        [p for p in BUILTIN_IGNORED_PROCESSES if p not in unignore]
+        + user_config.get("extra_ignored_processes", [])
+    )
+    config["ignored_suffixes"] = (
+        list(BUILTIN_IGNORED_SUFFIXES)
+        + user_config.get("extra_ignored_suffixes", [])
+    )
     return config
 
 
@@ -140,6 +182,15 @@ class SpinDoctorApp(rumps.App):
         self._icon_nsimage.setSize_((18, 18))  # type: ignore[union-attr]
         self.config = load_config()
         self._config_mtime = self._get_config_mtime()
+        log.info(
+            "Config loaded: threshold=%s%% duration=%ss interval=%ss cooldown=%ss ignored=%d suffixes=%s",
+            self.config["cpu_threshold"],
+            self.config["duration_seconds"],
+            self.config["check_interval"],
+            self.config["cooldown_seconds"],
+            len(self.config["ignored_processes"]),
+            self.config["ignored_suffixes"],
+        )
         self.tracked: dict[int, TrackedProcess] = {}
         self.cooldowns: dict[str, float] = {}
         self.my_pid = os.getpid()
@@ -203,6 +254,15 @@ class SpinDoctorApp(rumps.App):
         self.timer.stop()
         self.timer = rumps.Timer(self.poll, self.config["check_interval"])
         self.timer.start()
+        log.info(
+            "Config loaded: threshold=%s%% duration=%ss interval=%ss cooldown=%ss ignored=%d suffixes=%s",
+            self.config["cpu_threshold"],
+            self.config["duration_seconds"],
+            self.config["check_interval"],
+            self.config["cooldown_seconds"],
+            len(self.config["ignored_processes"]),
+            self.config["ignored_suffixes"],
+        )
 
     def reload_config(self, _):
         self._apply_config()
@@ -222,6 +282,7 @@ class SpinDoctorApp(rumps.App):
         now = time.time()
         threshold = self.config["cpu_threshold"]
         ignored = set(self.config["ignored_processes"])
+        ignored_suffixes = tuple(self.config.get("ignored_suffixes", []))
 
         for proc in psutil.process_iter(["pid", "name", "cpu_percent"]):
             try:
@@ -231,7 +292,9 @@ class SpinDoctorApp(rumps.App):
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
 
-            if pid == self.my_pid or name in ignored or cpu is None:
+            if pid == self.my_pid or cpu is None:
+                continue
+            if name in ignored or name.endswith(ignored_suffixes):
                 continue
 
             if cpu >= threshold:
@@ -240,6 +303,12 @@ class SpinDoctorApp(rumps.App):
                 else:
                     self.tracked[pid] = TrackedProcess(
                         pid=pid, name=name, first_seen=now, last_seen=now
+                    )
+                    log.info(
+                        "Tracking %s (PID %d) at %.1f%% CPU",
+                        name,
+                        pid,
+                        cpu,
                     )
 
         stale = [
@@ -296,9 +365,12 @@ class SpinDoctorApp(rumps.App):
 
     def send_notification(self, tp: TrackedProcess):
         duration = int(time.time() - tp.first_seen)
-        print(
-            f"[Spin Doctor] Alert: {tp.name} (PID {tp.pid}) busy for {duration}s",
-            flush=True,
+        log.warning(
+            "Alert: %s (PID %d) sustained ≥%s%% CPU for %ds",
+            tp.name,
+            tp.pid,
+            self.config["cpu_threshold"],
+            duration,
         )
         rumps.notification(
             "Busy Process Detected",
@@ -309,9 +381,16 @@ class SpinDoctorApp(rumps.App):
         )
 
     def kill_process(self, pid: int, expected_name: str):
+        log.info("Kill requested: %s (PID %d)", expected_name, pid)
         try:
             proc = psutil.Process(pid)
             if proc.name() != expected_name:
+                log.warning(
+                    "Kill aborted: PID %d is now '%s', not '%s' (recycled PID)",
+                    pid,
+                    proc.name(),
+                    expected_name,
+                )
                 rumps.notification(
                     "Spin Doctor",
                     "Kill aborted",
@@ -321,18 +400,22 @@ class SpinDoctorApp(rumps.App):
             proc.terminate()
             try:
                 proc.wait(timeout=3)
+                log.info("Terminated %s (PID %d) with SIGTERM", expected_name, pid)
             except psutil.TimeoutExpired:
                 proc.kill()
+                log.info("Killed %s (PID %d) with SIGKILL after timeout", expected_name, pid)
             rumps.notification(
                 "Spin Doctor", "", f"Killed {expected_name} (PID {pid})."
             )
             self.tracked.pop(pid, None)
         except psutil.NoSuchProcess:
+            log.info("%s (PID %d) already exited", expected_name, pid)
             rumps.notification(
                 "Spin Doctor", "", f"{expected_name} (PID {pid}) already exited."
             )
             self.tracked.pop(pid, None)
         except psutil.AccessDenied:
+            log.error("Kill failed: access denied for %s (PID %d)", expected_name, pid)
             rumps.notification(
                 "Spin Doctor",
                 "Kill failed",
@@ -342,6 +425,8 @@ class SpinDoctorApp(rumps.App):
 
 def main():
     ensure_plist()
+    setup_logging()
+    log.info("Spin Doctor starting (bundle=%s)", is_app_bundle())
     SpinDoctorApp().run()
 
 
