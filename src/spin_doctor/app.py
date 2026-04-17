@@ -56,6 +56,7 @@ BUILTIN_IGNORED_PROCESSES = [
     "mediaanalysisd",
     "fileproviderd",
     "FPCKService",
+    "voicememod",
 ]
 
 BUILTIN_IGNORED_SUFFIXES = [

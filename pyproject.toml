@@ -1,6 +1,6 @@
 [project]
 name = "spin-doctor"
-version = "0.3.0"
+version = "0.3.1"
 description = "macOS menu bar app that detects busy-loop processes and offers to kill them"
 license = "MIT"
 readme = "README.md"
