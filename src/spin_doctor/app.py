@@ -52,11 +52,23 @@ BUILTIN_IGNORED_PROCESSES = [
     "duetexpertd",
     "contactsd",
     "spotlightknowledged",
+    "spotlightknowledged.updater",
+    "corespotlightd",
     "routined",
     "mediaanalysisd",
     "fileproviderd",
+    "FileProviderExt",
     "FPCKService",
     "voicememod",
+    "suggestd",
+    "IntelligencePlatformComputeService",
+    "appstoreagent",
+    "triald",
+    "UsageTrackingAgent",
+    "XProtectRemediatorPirrit",
+    "XProtectRemediatorMRTv3",
+    "XProtectRemediatorSheepSwap",
+    "XProtectRemediatorAdload",
 ]
 
 BUILTIN_IGNORED_SUFFIXES = [
